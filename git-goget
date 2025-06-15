@@ -2,7 +2,6 @@
 set -euo pipefail
 
 VERSION="0.1.0"
-DEBUG=${GOGET_DEBUG:-}
 
 trap 'fail "Unexpected error on line $LINENO ($?)"' ERR
 
@@ -11,12 +10,6 @@ if ! command -v git >/dev/null 2>&1; then
   echo "Error: git command not found" >&2
   exit 1
 fi
-
-debug() {
-  if [[ -n "$DEBUG" ]]; then
-    echo "Debug: $*" >&2
-  fi
-}
 
 fail() {
   echo "Error: $*" >&2
@@ -89,20 +82,15 @@ cmd_get() {
   if [[ "$root_specified_explicitly" == false ]]; then
     if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
       root_dir="$GIT_GOGET_ROOT"
-      debug "Using root from GIT_GOGET_ROOT environment variable: $root_dir"
     else
       local git_config_root
       git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
       if [[ -n "$git_config_root" ]]; then
         root_dir="$git_config_root"
-        debug "Using root from git config: $root_dir"
       else
         root_dir="$HOME/src"
-        debug "Using default root: $root_dir"
       fi
     fi
-  else
-    debug "Using explicitly specified root: $root_dir"
   fi
   
   if [ -z "$git_url" ]; then
@@ -110,38 +98,30 @@ cmd_get() {
     exit 1
   fi
 
-  debug "Getting repository: $git_url"
-  debug "Root directory: $root_dir"
-
   # Parse the Git URL to extract host, owner and repo
   local host_and_repo
   host_and_repo=$(parse_git_url "$git_url")
-  debug "Parsed host:owner/repo: $host_and_repo"
   
   # Split host and owner/repo
   local host="${host_and_repo%%:*}"
   local owner_repo="${host_and_repo#*:}"
-  debug "Host: $host, Owner/repo: $owner_repo"
 
   # Expand tilde in root_dir if present
   root_dir="${root_dir/#\~/$HOME}"
 
   # Create root directory if it doesn't exist
   if [ ! -d "$root_dir" ]; then
-    debug "Creating root directory: $root_dir"
     mkdir -p "$root_dir"
   fi
 
   # Create host directory if it doesn't exist
   local host_dir="$root_dir/$host"
   if [ ! -d "$host_dir" ]; then
-    debug "Creating host directory: $host_dir"
     mkdir -p "$host_dir"
   fi
 
   # Destination directory
   local dest_dir="$host_dir/$owner_repo"
-  debug "Destination directory: $dest_dir"
 
   # Check if directory already exists
   if [ -d "$dest_dir" ]; then
@@ -220,7 +200,6 @@ SUPPORTED HOSTS
 
 ENVIRONMENT
   GIT_GOGET_ROOT      # Set default root directory (overrides git config)
-  GOGET_DEBUG=1       # Enable debug output
 EOF
 }
 
