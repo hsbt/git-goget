@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+DEBUG=${GOGET_DEBUG:-}
+
+trap 'fail "Unexpected error on line $LINENO ($?)"' ERR
+
+# Check if required commands exist
+if ! command -v git >/dev/null 2>&1; then
+  echo "Error: git command not found" >&2
+  exit 1
+fi
+
+debug() {
+  if [[ -n "$DEBUG" ]]; then
+    echo "Debug: $*" >&2
+  fi
+}
+
+fail() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+# Extract host, owner and repo from Git hosting URL
+parse_git_url() {
+  local url=$1
+  local original_url="$url"
+  
+  # Remove protocol prefix
+  url=${url#https://}
+  url=${url#http://}
+  url=${url#git@}
+  
+  # Extract host and path
+  local host=""
+  local path=""
+  
+  if [[ "$url" =~ ^([^/:]+):(.+)$ ]]; then
+    # SSH format: host:path
+    host="${BASH_REMATCH[1]}"
+    path="${BASH_REMATCH[2]}"
+  elif [[ "$url" =~ ^([^/]+)/(.+)$ ]]; then
+    # HTTPS format: host/path
+    host="${BASH_REMATCH[1]}"
+    path="${BASH_REMATCH[2]}"
+  else
+    fail "Invalid Git URL format. Expected: https://host/owner/repo or git@host:owner/repo"
+  fi
+  
+  # Remove .git suffix if present
+  path=${path%.git}
+  
+  # Should now have owner/repo format
+  if [[ ! "$path" =~ ^[^/]+/[^/]+$ ]]; then
+    fail "Invalid repository path format. Expected: owner/repo"
+  fi
+  
+  # Output in format: host:owner/repo
+  echo "$host:$path"
+}
+
+cmd_get() {
+  local root_dir="$HOME/src"
+  local github_url=""
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --root)
+        root_dir="$2"
+        shift 2
+        ;;
+      *)
+        git_url="$1"
+        shift
+        ;;
+    esac
+  done
+  
+  if [ -z "$git_url" ]; then
+    cmd_help
+    exit 1
+  fi
+
+  debug "Getting repository: $git_url"
+  debug "Root directory: $root_dir"
+
+  # Parse the Git URL to extract host, owner and repo
+  local host_and_repo
+  host_and_repo=$(parse_git_url "$git_url")
+  debug "Parsed host:owner/repo: $host_and_repo"
+  
+  # Split host and owner/repo
+  local host="${host_and_repo%%:*}"
+  local owner_repo="${host_and_repo#*:}"
+  debug "Host: $host, Owner/repo: $owner_repo"
+
+  # Expand tilde in root_dir if present
+  root_dir="${root_dir/#\~/$HOME}"
+
+  # Create root directory if it doesn't exist
+  if [ ! -d "$root_dir" ]; then
+    debug "Creating root directory: $root_dir"
+    mkdir -p "$root_dir"
+  fi
+
+  # Create host directory if it doesn't exist
+  local host_dir="$root_dir/$host"
+  if [ ! -d "$host_dir" ]; then
+    debug "Creating host directory: $host_dir"
+    mkdir -p "$host_dir"
+  fi
+
+  # Destination directory
+  local dest_dir="$host_dir/$owner_repo"
+  debug "Destination directory: $dest_dir"
+
+  # Check if directory already exists
+  if [ -d "$dest_dir" ]; then
+    echo "Directory $dest_dir already exists. Updating repository..."
+    cd "$dest_dir"
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+      git pull
+      echo "✓ Updated repository in $dest_dir"
+    else
+      fail "Directory exists but is not a git repository: $dest_dir"
+    fi
+  else
+    # Clone the repository
+    echo "Cloning $git_url to $dest_dir..."
+    git clone "$git_url" "$dest_dir"
+    echo "✓ Cloned repository to $dest_dir"
+  fi
+  
+  echo "Repository path: $dest_dir"
+}
+
+cmd_version() {
+  echo "git-goget ${VERSION}"
+}
+
+cmd_help() {
+  cat <<'EOF'
+Clone Git repositories to a structured directory layout.
+
+USAGE
+  git goget [options] <git-url>
+
+OPTIONS
+  --root <directory>  Specify the root directory for cloning (default: ~/src)
+
+COMMANDS
+  <git-url>     Clone the specified Git repository to <root>/<host>/owner/repo
+  version       Show git-goget version
+  --help        Show this help message
+
+EXAMPLES
+  git goget https://github.com/rails/rails                  # Clone to ~/src/github.com/rails/rails
+  git goget https://gitlab.com/gitlab-org/gitlab            # Clone to ~/src/gitlab.com/gitlab-org/gitlab
+  git goget https://bitbucket.org/atlassian/stash           # Clone to ~/src/bitbucket.org/atlassian/stash
+  git goget --root ~/Documents https://github.com/rails/rails   # Clone to ~/Documents/github.com/rails/rails
+  git goget git@github.com:rails/rails.git                  # Same as first, using SSH URL
+  git goget version                                          # Show version
+
+DESCRIPTION
+  This tool clones Git repositories to a structured directory layout under a specified root directory.
+  It supports various Git hosting services including GitHub, GitLab, Bitbucket, and others.
+  If the repository already exists, it will update it by running 'git pull'.
+  
+  The directory structure follows the pattern:
+    <root>/<host>/owner/repository
+
+SUPPORTED HOSTS
+  - github.com
+  - gitlab.com
+  - bitbucket.org
+  - And any other Git hosting service
+
+ENVIRONMENT
+  GOGET_DEBUG=1       # Enable debug output
+EOF
+}
+
+cmd_completion() {
+  cat <<'EOF'
+# bash completion for git goget
+
+_git_goget() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  case "$prev" in
+    goget)
+      COMPREPLY=( $(compgen -W "version --help" -- "$cur") )
+      return 0
+      ;;
+  esac
+
+  return 0
+}
+
+complete -F _git_goget git-goget
+EOF
+}
+
+case "${1:-}" in
+  "" | "-h" | "--help")  cmd_help ;;
+  "version")             cmd_version ;;
+  "completion")          cmd_completion ;;
+  *)                     cmd_get "$@" ;;
+esac
