@@ -209,3 +209,55 @@ teardown() {
   [ -d "$HOME/src/github.com/rails/rails" ]
   [ -f "$HOME/src/github.com/rails/rails/README.md" ]
 }
+
+@test "uses GIT_GOGET_ROOT environment variable when set" {
+  # Set GIT_GOGET_ROOT environment variable
+  export GIT_GOGET_ROOT="$TEST_HOME/env-root"
+  
+  run "$SCRIPT_PATH" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $TEST_HOME/env-root/github.com/rails/rails" ]]
+  
+  # Check that the directory structure was created in environment variable location
+  [ -d "$TEST_HOME/env-root/github.com/rails/rails" ]
+  [ -f "$TEST_HOME/env-root/github.com/rails/rails/README.md" ]
+  
+  unset GIT_GOGET_ROOT
+}
+
+@test "GIT_GOGET_ROOT overrides git config user.rootDirectory" {
+  # Set both environment variable and git config
+  export GIT_GOGET_ROOT="$TEST_HOME/env-root"
+  git config user.rootDirectory "$TEST_HOME/git-config-root"
+  
+  run "$SCRIPT_PATH" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $TEST_HOME/env-root/github.com/rails/rails" ]]
+  
+  # Check that environment variable takes priority
+  [ -d "$TEST_HOME/env-root/github.com/rails/rails" ]
+  [ -f "$TEST_HOME/env-root/github.com/rails/rails/README.md" ]
+  
+  # Git config location should not be used
+  [ ! -d "$TEST_HOME/git-config-root/github.com/rails/rails" ]
+  
+  unset GIT_GOGET_ROOT
+}
+
+@test "--root option overrides GIT_GOGET_ROOT environment variable" {
+  # Set GIT_GOGET_ROOT environment variable
+  export GIT_GOGET_ROOT="$TEST_HOME/env-root"
+  
+  run "$SCRIPT_PATH" --root "$TEST_HOME/explicit-root" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $TEST_HOME/explicit-root/github.com/rails/rails" ]]
+  
+  # Check that --root option takes highest priority
+  [ -d "$TEST_HOME/explicit-root/github.com/rails/rails" ]
+  [ -f "$TEST_HOME/explicit-root/github.com/rails/rails/README.md" ]
+  
+  # Environment variable location should not be used
+  [ ! -d "$TEST_HOME/env-root/github.com/rails/rails" ]
+  
+  unset GIT_GOGET_ROOT
+}

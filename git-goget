@@ -83,17 +83,23 @@ cmd_get() {
   
   # Determine root directory based on priority:
   # 1. Explicitly specified --root
-  # 2. Git config "user.rootDirectory" entry
-  # 3. Default ~/src
+  # 2. GIT_GOGET_ROOT environment variable
+  # 3. Git config "user.rootDirectory" entry
+  # 4. Default ~/src
   if [[ "$root_specified_explicitly" == false ]]; then
-    local git_config_root
-    git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
-    if [[ -n "$git_config_root" ]]; then
-      root_dir="$git_config_root"
-      debug "Using root from git config: $root_dir"
+    if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
+      root_dir="$GIT_GOGET_ROOT"
+      debug "Using root from GIT_GOGET_ROOT environment variable: $root_dir"
     else
-      root_dir="$HOME/src"
-      debug "Using default root: $root_dir"
+      local git_config_root
+      git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
+      if [[ -n "$git_config_root" ]]; then
+        root_dir="$git_config_root"
+        debug "Using root from git config: $root_dir"
+      else
+        root_dir="$HOME/src"
+        debug "Using default root: $root_dir"
+      fi
     fi
   else
     debug "Using explicitly specified root: $root_dir"
@@ -178,14 +184,17 @@ COMMANDS
 
 ROOT DIRECTORY PRIORITY
   1. Explicitly specified --root option (highest priority)
-  2. Git config "user.rootDirectory" entry (git config user.rootDirectory <directory>)
-  3. Default ~/src (fallback)
+  2. GIT_GOGET_ROOT environment variable
+  3. Git config "user.rootDirectory" entry (git config user.rootDirectory <directory>)
+  4. Default ~/src (fallback)
 
 EXAMPLES
   git goget https://github.com/rails/rails                  # Clone to root directory
   git goget --root ~/Documents https://github.com/rails/rails   # Clone to ~/Documents/github.com/rails/rails
+  export GIT_GOGET_ROOT=~/workspace                        # Set environment variable
+  git goget https://github.com/rails/rails                  # Now clones to ~/workspace/github.com/rails/rails
   git config user.rootDirectory ~/myprojects               # Set default root in git config
-  git goget https://github.com/rails/rails                  # Now clones to ~/myprojects/github.com/rails/rails
+  git goget https://github.com/rails/rails                  # Clones to ~/myprojects/github.com/rails/rails
   git goget git@github.com:rails/rails.git                  # Same as above, using SSH URL
   git goget version                                          # Show version
 
@@ -199,8 +208,9 @@ DESCRIPTION
 
   The root directory is determined by the following priority:
   1. --root option (if specified)
-  2. git config "user.rootDirectory" value (if set)
-  3. ~/src (default fallback)
+  2. GIT_GOGET_ROOT environment variable (if set)
+  3. git config "user.rootDirectory" value (if set)
+  4. ~/src (default fallback)
 
 SUPPORTED HOSTS
   - github.com
@@ -209,6 +219,7 @@ SUPPORTED HOSTS
   - And any other Git hosting service
 
 ENVIRONMENT
+  GIT_GOGET_ROOT      # Set default root directory (overrides git config)
   GOGET_DEBUG=1       # Enable debug output
 EOF
 }
