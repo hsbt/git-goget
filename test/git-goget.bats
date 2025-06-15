@@ -167,3 +167,45 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" =~ "Clone Git repositories to a structured directory layout" ]]
 }
+
+@test "uses git config user.rootDirectory when set" {
+  # Set git config user.rootDirectory
+  git config user.rootDirectory "$TEST_HOME/git-config-root"
+  
+  run "$SCRIPT_PATH" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $TEST_HOME/git-config-root/github.com/rails/rails" ]]
+  
+  # Check that the directory structure was created in git config location
+  [ -d "$TEST_HOME/git-config-root/github.com/rails/rails" ]
+  [ -f "$TEST_HOME/git-config-root/github.com/rails/rails/README.md" ]
+}
+
+@test "--root option overrides git config user.rootDirectory" {
+  # Set git config user.rootDirectory
+  git config user.rootDirectory "$TEST_HOME/git-config-root"
+  
+  run "$SCRIPT_PATH" --root "$TEST_HOME/explicit-root" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $TEST_HOME/explicit-root/github.com/rails/rails" ]]
+  
+  # Check that the directory structure was created in explicit root location
+  [ -d "$TEST_HOME/explicit-root/github.com/rails/rails" ]
+  [ -f "$TEST_HOME/explicit-root/github.com/rails/rails/README.md" ]
+  
+  # Git config location should not be used
+  [ ! -d "$TEST_HOME/git-config-root/github.com/rails/rails" ]
+}
+
+@test "falls back to ~/src when no git config user.rootDirectory and no --root" {
+  # Ensure no git config user.rootDirectory is set
+  git config --unset user.rootDirectory 2>/dev/null || true
+  
+  run "$SCRIPT_PATH" "https://github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Cloned repository to $HOME/src/github.com/rails/rails" ]]
+  
+  # Check that the directory structure was created in default location
+  [ -d "$HOME/src/github.com/rails/rails" ]
+  [ -f "$HOME/src/github.com/rails/rails/README.md" ]
+}
