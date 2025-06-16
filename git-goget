@@ -19,7 +19,6 @@ fail() {
 # Extract host, owner and repo from Git hosting URL
 parse_git_url() {
   local url=$1
-  local original_url="$url"
   
   # Remove protocol prefix
   url=${url#https://}
@@ -56,7 +55,6 @@ parse_git_url() {
 
 cmd_get() {
   local root_dir=""
-  local github_url=""
   local root_specified_explicitly=false
   
   # Parse arguments
@@ -145,6 +143,56 @@ cmd_version() {
   echo "git-goget ${VERSION}"
 }
 
+cmd_update() {
+  local root_dir=""
+  
+  # Determine root directory based on priority:
+  # 1. GIT_GOGET_ROOT environment variable
+  # 2. Git config "user.rootDirectory" entry
+  # 3. Default ~/src
+  if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
+    root_dir="$GIT_GOGET_ROOT"
+  else
+    local git_config_root
+    git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
+    if [[ -n "$git_config_root" ]]; then
+      root_dir="$git_config_root"
+    else
+      root_dir="$HOME/src"
+    fi
+  fi
+
+  # Expand tilde in root_dir if present
+  root_dir="${root_dir/#\~/$HOME}"
+
+  if [ ! -d "$root_dir" ]; then
+    fail "Root directory does not exist: $root_dir"
+  fi
+
+  # Get number of CPU cores for parallel execution
+  local cpu_count
+  if command -v nproc >/dev/null 2>&1; then
+    cpu_count=$(nproc)
+  elif command -v sysctl >/dev/null 2>&1; then
+    cpu_count=$(sysctl -n hw.ncpu 2>/dev/null || echo "4")
+  else
+    cpu_count="4"
+  fi
+
+  # Function to update a single repository
+  update_repo() {
+    local repo_dir="$1"
+    echo "$repo_dir"
+    cd "$repo_dir" && git pull --prune > /dev/null 2>&1
+  }
+  export -f update_repo
+
+  # Find all git repositories and update them in parallel
+  find "$root_dir" -type d -name ".git" | \
+    sed 's|/.git$||' | \
+    xargs -P "$cpu_count" -I {} bash -c 'update_repo "$@"' _ {}
+}
+
 cmd_help() {
   cat <<'EOF'
 Clone Git repositories to a structured directory layout.
@@ -226,56 +274,6 @@ _git_goget() {
 
 complete -F _git_goget git-goget
 EOF
-}
-
-cmd_update() {
-  local root_dir=""
-  
-  # Determine root directory based on priority:
-  # 1. GIT_GOGET_ROOT environment variable
-  # 2. Git config "user.rootDirectory" entry
-  # 3. Default ~/src
-  if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
-    root_dir="$GIT_GOGET_ROOT"
-  else
-    local git_config_root
-    git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
-    if [[ -n "$git_config_root" ]]; then
-      root_dir="$git_config_root"
-    else
-      root_dir="$HOME/src"
-    fi
-  fi
-
-  # Expand tilde in root_dir if present
-  root_dir="${root_dir/#\~/$HOME}"
-
-  if [ ! -d "$root_dir" ]; then
-    fail "Root directory does not exist: $root_dir"
-  fi
-
-  # Get number of CPU cores for parallel execution
-  local cpu_count
-  if command -v nproc >/dev/null 2>&1; then
-    cpu_count=$(nproc)
-  elif command -v sysctl >/dev/null 2>&1; then
-    cpu_count=$(sysctl -n hw.ncpu 2>/dev/null || echo "4")
-  else
-    cpu_count="4"
-  fi
-
-  # Function to update a single repository
-  update_repo() {
-    local repo_dir="$1"
-    echo "$repo_dir"
-    cd "$repo_dir" && git pull --prune > /dev/null 2>&1
-  }
-  export -f update_repo
-
-  # Find all git repositories and update them in parallel
-  find "$root_dir" -type d -name ".git" | \
-    sed 's|/.git$||' | \
-    xargs -P "$cpu_count" -I {} bash -c 'update_repo "$@"' _ {}
 }
 
 case "${1:-}" in
