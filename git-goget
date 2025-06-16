@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.1"
+VERSION="0.2.0"
 
 trap 'fail "Unexpected error on line $LINENO ($?)"' ERR
 
