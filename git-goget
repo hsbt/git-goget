@@ -53,30 +53,12 @@ parse_git_url() {
   echo "$host:$path"
 }
 
-cmd_get() {
-  local root_dir=""
-  local root_specified_explicitly=false
+# Determine root directory based on priority
+get_root_dir() {
+  local root_dir="$1"
+  local root_specified_explicitly="$2"
   
-  # Parse arguments
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      --root)
-        root_dir="$2"
-        root_specified_explicitly=true
-        shift 2
-        ;;
-      --update)
-        cmd_update
-        exit 0
-        ;;
-      *)
-        git_url="$1"
-        shift
-        ;;
-    esac
-  done
-  
-  # Determine root directory based on priority:
+  # Priority:
   # 1. Explicitly specified --root
   # 2. GIT_GOGET_ROOT environment variable
   # 3. Git config "user.rootDirectory" entry
@@ -95,11 +77,65 @@ cmd_get() {
     fi
   fi
   
-  if [ -z "$git_url" ]; then
-    cmd_help
-    exit 1
-  fi
+  # Expand tilde in root_dir if present
+  root_dir="${root_dir/#\~/$HOME}"
+  echo "$root_dir"
+}
 
+cmd_main() {
+  local root_dir=""
+  local root_specified_explicitly=false
+  local action=""
+  local git_url=""
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --root)
+        root_dir="$2"
+        root_specified_explicitly=true
+        shift 2
+        ;;
+      --update)
+        action="update"
+        shift
+        ;;
+      *)
+        if [[ -z "$action" ]]; then
+          action="get"
+          git_url="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+  
+  # Determine root directory
+  root_dir=$(get_root_dir "$root_dir" "$root_specified_explicitly")
+  
+  # Dispatch to appropriate command
+  case "$action" in
+    "update")
+      cmd_update "$root_dir"
+      ;;
+    "get")
+      if [ -z "$git_url" ]; then
+        cmd_help
+        exit 1
+      fi
+      cmd_get "$git_url" "$root_dir"
+      ;;
+    *)
+      cmd_help
+      exit 1
+      ;;
+  esac
+}
+
+cmd_get() {
+  local git_url="$1"
+  local root_dir="$2"
+  
   # Parse the Git URL to extract host, owner and repo
   local host_and_repo
   host_and_repo=$(parse_git_url "$git_url")
@@ -107,9 +143,6 @@ cmd_get() {
   # Split host and owner/repo
   local host="${host_and_repo%%:*}"
   local owner_repo="${host_and_repo#*:}"
-
-  # Expand tilde in root_dir if present
-  root_dir="${root_dir/#\~/$HOME}"
 
   # Create root directory if it doesn't exist
   if [ ! -d "$root_dir" ]; then
@@ -144,26 +177,7 @@ cmd_version() {
 }
 
 cmd_update() {
-  local root_dir=""
-  
-  # Determine root directory based on priority:
-  # 1. GIT_GOGET_ROOT environment variable
-  # 2. Git config "user.rootDirectory" entry
-  # 3. Default ~/src
-  if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
-    root_dir="$GIT_GOGET_ROOT"
-  else
-    local git_config_root
-    git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
-    if [[ -n "$git_config_root" ]]; then
-      root_dir="$git_config_root"
-    else
-      root_dir="$HOME/src"
-    fi
-  fi
-
-  # Expand tilde in root_dir if present
-  root_dir="${root_dir/#\~/$HOME}"
+  local root_dir="$1"
 
   if [ ! -d "$root_dir" ]; then
     fail "Root directory does not exist: $root_dir"
@@ -280,6 +294,5 @@ case "${1:-}" in
   "" | "-h" | "--help")  cmd_help ;;
   "version")             cmd_version ;;
   "completion")          cmd_completion ;;
-  "--update")            cmd_update ;;
-  *)                     cmd_get "$@" ;;
+  *)                     cmd_main "$@" ;;
 esac
