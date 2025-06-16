@@ -67,6 +67,10 @@ cmd_get() {
         root_specified_explicitly=true
         shift 2
         ;;
+      --update)
+        cmd_update
+        exit 0
+        ;;
       *)
         git_url="$1"
         shift
@@ -147,12 +151,15 @@ Clone Git repositories to a structured directory layout.
 
 USAGE
   git goget [options] <git-url>
+  git goget --update
 
 OPTIONS
   --root <directory>  Specify the root directory for cloning (overrides git config)
+  --update           Update all repositories in the root directory
 
 COMMANDS
   <git-url>     Clone the specified Git repository to <root>/<host>/owner/repo
+  --update      Update all repositories in the root directory
   version       Show git-goget version
   --help        Show this help message
 
@@ -165,6 +172,7 @@ ROOT DIRECTORY PRIORITY
 EXAMPLES
   git goget https://github.com/rails/rails                  # Clone to root directory
   git goget --root ~/Documents https://github.com/rails/rails   # Clone to ~/Documents/github.com/rails/rails
+  git goget --update                                        # Update all repositories in root directory
   export GIT_GOGET_ROOT=~/workspace                        # Set environment variable
   git goget https://github.com/rails/rails                  # Now clones to ~/workspace/github.com/rails/rails
   git config user.rootDirectory ~/myprojects               # Set default root in git config
@@ -220,9 +228,60 @@ complete -F _git_goget git-goget
 EOF
 }
 
+cmd_update() {
+  local root_dir=""
+  
+  # Determine root directory based on priority:
+  # 1. GIT_GOGET_ROOT environment variable
+  # 2. Git config "user.rootDirectory" entry
+  # 3. Default ~/src
+  if [[ -n "${GIT_GOGET_ROOT:-}" ]]; then
+    root_dir="$GIT_GOGET_ROOT"
+  else
+    local git_config_root
+    git_config_root=$(git config --get user.rootDirectory 2>/dev/null || echo "")
+    if [[ -n "$git_config_root" ]]; then
+      root_dir="$git_config_root"
+    else
+      root_dir="$HOME/src"
+    fi
+  fi
+
+  # Expand tilde in root_dir if present
+  root_dir="${root_dir/#\~/$HOME}"
+
+  if [ ! -d "$root_dir" ]; then
+    fail "Root directory does not exist: $root_dir"
+  fi
+
+  # Get number of CPU cores for parallel execution
+  local cpu_count
+  if command -v nproc >/dev/null 2>&1; then
+    cpu_count=$(nproc)
+  elif command -v sysctl >/dev/null 2>&1; then
+    cpu_count=$(sysctl -n hw.ncpu 2>/dev/null || echo "4")
+  else
+    cpu_count="4"
+  fi
+
+  # Function to update a single repository
+  update_repo() {
+    local repo_dir="$1"
+    echo "$repo_dir"
+    cd "$repo_dir" && git pull --prune > /dev/null 2>&1
+  }
+  export -f update_repo
+
+  # Find all git repositories and update them in parallel
+  find "$root_dir" -type d -name ".git" | \
+    sed 's|/.git$||' | \
+    xargs -P "$cpu_count" -I {} bash -c 'update_repo "$@"' _ {}
+}
+
 case "${1:-}" in
   "" | "-h" | "--help")  cmd_help ;;
   "version")             cmd_version ;;
   "completion")          cmd_completion ;;
+  "--update")            cmd_update ;;
   *)                     cmd_get "$@" ;;
 esac
