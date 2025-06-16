@@ -123,24 +123,21 @@ cmd_get() {
   # Destination directory
   local dest_dir="$host_dir/$owner_repo"
 
+  # Display gem and URL
+  echo "$owner_repo: $git_url"
+
   # Check if directory already exists
   if [ -d "$dest_dir" ]; then
-    echo "Directory $dest_dir already exists. Updating repository..."
     cd "$dest_dir"
     if git rev-parse --git-dir > /dev/null 2>&1; then
-      git pull
-      echo "✓ Updated repository in $dest_dir"
+      git pull > /dev/null 2>&1
     else
       fail "Directory exists but is not a git repository: $dest_dir"
     fi
   else
     # Clone the repository
-    echo "Cloning $git_url to $dest_dir..."
-    git clone "$git_url" "$dest_dir"
-    echo "✓ Cloned repository to $dest_dir"
+    git clone "$git_url" "$dest_dir" > /dev/null 2>&1
   fi
-  
-  echo "Repository path: $dest_dir"
 }
 
 cmd_version() {
