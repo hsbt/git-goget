@@ -123,9 +123,6 @@ cmd_get() {
   # Destination directory
   local dest_dir="$host_dir/$owner_repo"
 
-  # Display gem and URL
-  echo "$owner_repo: $git_url"
-
   # Check if directory already exists
   if [ -d "$dest_dir" ]; then
     cd "$dest_dir"
