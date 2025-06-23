@@ -38,7 +38,7 @@ parse_git_url() {
     host="${BASH_REMATCH[1]}"
     path="${BASH_REMATCH[2]}"
   else
-    fail "Invalid Git URL format. Expected: https://host/owner/repo or git@host:owner/repo"
+    fail "Invalid Git URL format: '$url'. Expected: https://host/owner/repo or git@host:owner/repo"
   fi
   
   # Remove .git suffix if present
