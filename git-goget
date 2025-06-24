@@ -25,6 +25,9 @@ parse_git_url() {
   url=${url#http://}
   url=${url#git@}
   
+  # Normalize URL by removing trailing slash and common suffixes
+  url=$(echo "$url" | sed -E 's|(/wiki|/issues?|/pulls?|/tree/.*|/blob/.*)$||' | sed 's|/$||')
+  
   # Extract host and path
   local host=""
   local path=""
