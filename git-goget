@@ -200,18 +200,40 @@ cmd_update() {
     cpu_count="4"
   fi
 
+  # Increase parallelism for network-bound operations
+  local parallel_count=$(( cpu_count * 4 ))
+  if [[ "$parallel_count" -lt 16 ]]; then
+    parallel_count=16
+  fi
+
   # Function to update a single repository
   update_repo() {
     local repo_dir="$1"
+    cd "$repo_dir" || return
+
+    # Get current branch name
+    local branch
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null) || return
+
+    # Compare local HEAD with remote ref (ls-remote only transfers ref info, not objects)
+    local local_head remote_head
+    local_head=$(git rev-parse HEAD 2>/dev/null) || return
+    remote_head=$(git ls-remote origin "refs/heads/$branch" 2>/dev/null | cut -f1)
+
+    if [[ -n "$remote_head" && "$local_head" == "$remote_head" ]]; then
+      # Already up to date, skip pull
+      return
+    fi
+
     echo "$repo_dir"
-    cd "$repo_dir" && git pull --prune > /dev/null 2>&1
+    git pull --prune > /dev/null 2>&1
   }
   export -f update_repo
 
   # Find all git repositories and update them in parallel
   find "$root_dir" -type d -name ".git" | \
     sed 's|/.git$||' | \
-    xargs -P "$cpu_count" -I {} bash -c 'update_repo "$@"' _ {}
+    xargs -P "$parallel_count" -I {} bash -c 'update_repo "$@"' _ {}
 }
 
 cmd_help() {
