@@ -65,6 +65,7 @@ parse_git_url() {
   url=${url#https://}
   url=${url#http://}
   url=${url#git@}
+  url=${url#www.}
   
   # Normalize URL by removing trailing slash and common suffixes
   url=$(echo "$url" | sed -E 's#(/wiki|/issues?|/pulls?|/tree/.*|/blob/.*)$##' | sed 's#/$##')
@@ -179,6 +180,11 @@ cmd_main() {
 cmd_get() {
   local git_url="$1"
   local root_dir="$2"
+
+  # gem metadata and anything copied out of a project page carry a fragment or
+  # a query string, which git clone has no way to make sense of.
+  git_url=${git_url%%#*}
+  git_url=${git_url%%\?*}
   
   # Parse the Git URL to extract host, owner and repo
   local host_and_repo

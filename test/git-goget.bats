@@ -378,3 +378,50 @@ EOF
   [[ "$output" =~ "Skipped: commits not on the remote" ]]
   [ "$(/usr/bin/git -C "$dest" symbolic-ref --short HEAD)" = "master" ]
 }
+
+# Records the URL handed to git clone, which a successful clone otherwise keeps
+# to itself now that its output is captured rather than printed.
+record_clone_url() {
+  cat > "$MOCK_BIN_DIR/git" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "clone" ]]; then
+  echo "$2" > "$TEST_TEMP_DIR/clone-url"
+  mkdir -p "$3"
+  cd "$3"
+  /usr/bin/git init -q .
+else
+  /usr/bin/git "$@"
+fi
+EOF
+  chmod +x "$MOCK_BIN_DIR/git"
+}
+
+@test "drops a fragment before cloning" {
+  record_clone_url
+
+  run "$SCRIPT_PATH" "https://github.com/rails/rails#readme"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_TEMP_DIR/clone-url")" = "https://github.com/rails/rails" ]
+  [ -d "$HOME/src/github.com/rails/rails" ]
+  [ ! -e "$HOME/src/github.com/rails/rails#readme" ]
+}
+
+@test "drops a query string before cloning" {
+  record_clone_url
+
+  run "$SCRIPT_PATH" "https://github.com/rails/rails?tab=readme-ov-file"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_TEMP_DIR/clone-url")" = "https://github.com/rails/rails" ]
+  [ -d "$HOME/src/github.com/rails/rails" ]
+}
+
+# The host only decides the directory, so the URL keeps the www that resolves.
+@test "ignores a www prefix on the host" {
+  record_clone_url
+
+  run "$SCRIPT_PATH" "https://www.github.com/rails/rails"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_TEMP_DIR/clone-url")" = "https://www.github.com/rails/rails" ]
+  [ -d "$HOME/src/github.com/rails/rails" ]
+  [ ! -d "$HOME/src/www.github.com" ]
+}

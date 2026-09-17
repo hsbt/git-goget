@@ -198,6 +198,11 @@ Examples:
 - `https://gitlab.com/gitlab-org/gitlab.git`
 - `git@bitbucket.org:atlassian/stash.git`
 
+A `www.` prefix on the host, a trailing fragment or query string, and the
+`/wiki`, `/issues`, `/pulls`, `/tree/...` and `/blob/...` suffixes are all
+ignored. A URL copied out of a project page or taken from gem metadata
+therefore reaches the same directory as the plain one.
+
 ## Exit codes
 
 | Code | Meaning |
