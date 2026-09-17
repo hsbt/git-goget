@@ -198,6 +198,19 @@ Examples:
 - `https://gitlab.com/gitlab-org/gitlab.git`
 - `git@bitbucket.org:atlassian/stash.git`
 
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | The repository was cloned or updated |
+| 1 | Something went wrong. The git output follows the message |
+| 3 | The repository could not be reached at all and was skipped |
+
+Code 3 exists for callers walking a list of URLs they do not control, such as
+the homepage of every installed gem. A repository that has been deleted or made
+private is nothing the caller can act on, so it is kept apart from a genuine
+failure.
+
 ## Testing
 
 The project includes comprehensive test coverage using Bats (Bash Automated Testing System):

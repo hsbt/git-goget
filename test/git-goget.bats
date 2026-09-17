@@ -275,6 +275,26 @@ teardown() {
   unset GIT_GOGET_ROOT
 }
 
+@test "skips a repository that no longer answers" {
+  cat > "$MOCK_BIN_DIR/git" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "clone" ]]; then
+  echo "fatal: repository not found" >&2
+  exit 128
+elif [[ "$1" == "ls-remote" ]]; then
+  exit 128
+else
+  /usr/bin/git "$@"
+fi
+EOF
+  chmod +x "$MOCK_BIN_DIR/git"
+
+  run "$SCRIPT_PATH" "https://github.com/username/my_gem"
+  [ "$status" -eq 3 ]
+  [[ "$output" =~ "Skipped: repository is unreachable" ]]
+  [ ! -d "$HOME/src/github.com/username/my_gem" ]
+}
+
 @test "reports the git error when a reachable repository fails to clone" {
   cat > "$MOCK_BIN_DIR/git" << 'EOF'
 #!/bin/bash
