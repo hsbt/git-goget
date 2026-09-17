@@ -165,16 +165,20 @@ cmd_get() {
   if [ -d "$dest_dir" ]; then
     cd "$dest_dir"
     if git rev-parse --git-dir > /dev/null 2>&1; then
-      if ! git pull > /dev/null 2>&1; then
-        fail "Failed to update repository: $dest_dir"
+      local pull_log
+      if ! pull_log=$(git pull 2>&1); then
+        fail "Failed to update repository: $dest_dir
+$pull_log"
       fi
     else
       fail "Directory exists but is not a git repository: $dest_dir"
     fi
   else
     # Clone the repository
-    if ! git clone "$git_url" "$dest_dir" > /dev/null 2>&1; then
-      fail "Failed to clone repository: $git_url"
+    local clone_log
+    if ! clone_log=$(git clone "$git_url" "$dest_dir" 2>&1); then
+      fail "Failed to clone repository: $git_url
+$clone_log"
     fi
   fi
 }

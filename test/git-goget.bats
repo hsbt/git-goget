@@ -274,3 +274,23 @@ teardown() {
   
   unset GIT_GOGET_ROOT
 }
+
+@test "reports the git error when a reachable repository fails to clone" {
+  cat > "$MOCK_BIN_DIR/git" << 'EOF'
+#!/bin/bash
+if [[ "$1" == "clone" ]]; then
+  echo "fatal: fsck error in packed object" >&2
+  exit 128
+elif [[ "$1" == "ls-remote" ]]; then
+  exit 0
+else
+  /usr/bin/git "$@"
+fi
+EOF
+  chmod +x "$MOCK_BIN_DIR/git"
+
+  run "$SCRIPT_PATH" "https://github.com/rails/rails"
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "Failed to clone repository" ]]
+  [[ "$output" =~ "fsck error in packed object" ]]
+}
