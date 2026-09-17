@@ -314,3 +314,67 @@ EOF
   [[ "$output" =~ "Failed to clone repository" ]]
   [[ "$output" =~ "fsck error in packed object" ]]
 }
+
+# Builds a real checkout whose upstream renamed its default branch from master
+# to main, which is the state a plain "git pull" cannot get out of.
+setup_renamed_upstream() {
+  local dest_dir="$1"
+  local upstream="$TEST_TEMP_DIR/upstream.git"
+  local seed="$TEST_TEMP_DIR/seed"
+
+  /usr/bin/git init -q --bare -b master "$upstream"
+  /usr/bin/git init -q -b master "$seed"
+  /usr/bin/git -C "$seed" config user.email "test@example.com"
+  /usr/bin/git -C "$seed" config user.name "Test User"
+  echo "Seed" > "$seed/README.md"
+  /usr/bin/git -C "$seed" add README.md
+  /usr/bin/git -C "$seed" commit -q -m "Initial commit"
+  /usr/bin/git -C "$seed" push -q "$upstream" master
+
+  mkdir -p "$(dirname "$dest_dir")"
+  /usr/bin/git clone -q "$upstream" "$dest_dir"
+  /usr/bin/git -C "$dest_dir" config user.email "test@example.com"
+  /usr/bin/git -C "$dest_dir" config user.name "Test User"
+
+  /usr/bin/git -C "$upstream" branch -m master main
+  /usr/bin/git -C "$upstream" symbolic-ref HEAD refs/heads/main
+
+  cat > "$MOCK_BIN_DIR/git" << 'EOF'
+#!/bin/bash
+exec /usr/bin/git "$@"
+EOF
+  chmod +x "$MOCK_BIN_DIR/git"
+}
+
+@test "follows the remote's new default branch when the old one is gone" {
+  dest="$HOME/src/github.com/example/renamed"
+  setup_renamed_upstream "$dest"
+
+  run "$SCRIPT_PATH" "https://github.com/example/renamed"
+  [ "$status" -eq 0 ]
+  [ "$(/usr/bin/git -C "$dest" symbolic-ref --short HEAD)" = "main" ]
+}
+
+@test "leaves a checkout with uncommitted changes alone" {
+  dest="$HOME/src/github.com/example/renamed"
+  setup_renamed_upstream "$dest"
+  echo "work in progress" >> "$dest/README.md"
+
+  run "$SCRIPT_PATH" "https://github.com/example/renamed"
+  [ "$status" -eq 4 ]
+  [[ "$output" =~ "Skipped: uncommitted changes" ]]
+  [ "$(/usr/bin/git -C "$dest" symbolic-ref --short HEAD)" = "master" ]
+}
+
+@test "leaves a checkout holding commits the remote does not have alone" {
+  dest="$HOME/src/github.com/example/renamed"
+  setup_renamed_upstream "$dest"
+  echo "local only" > "$dest/local.md"
+  /usr/bin/git -C "$dest" add local.md
+  /usr/bin/git -C "$dest" commit -q -m "Local commit"
+
+  run "$SCRIPT_PATH" "https://github.com/example/renamed"
+  [ "$status" -eq 4 ]
+  [[ "$output" =~ "Skipped: commits not on the remote" ]]
+  [ "$(/usr/bin/git -C "$dest" symbolic-ref --short HEAD)" = "master" ]
+}

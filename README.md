@@ -205,11 +205,17 @@ Examples:
 | 0 | The repository was cloned or updated |
 | 1 | Something went wrong. The git output follows the message |
 | 3 | The repository could not be reached at all and was skipped |
+| 4 | The checkout holds work the remote does not have and was left alone |
 
-Code 3 exists for callers walking a list of URLs they do not control, such as
-the homepage of every installed gem. A repository that has been deleted or made
-private is nothing the caller can act on, so it is kept apart from a genuine
-failure.
+Codes 3 and 4 exist for callers walking a list of URLs they do not control, such
+as the homepage of every installed gem. Neither is something the caller can act
+on, so both are kept apart from a genuine failure. Code 4 covers a checkout with
+uncommitted changes and a checkout carrying commits that were never pushed.
+
+An update whose upstream branch has been deleted, which is what renaming a
+default branch upstream leaves behind, is retried against the remote's current
+default branch. That retry only runs when the checkout is clean and holds no
+commits of its own, so a code 4 checkout is never modified.
 
 ## Testing
 

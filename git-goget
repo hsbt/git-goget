@@ -7,6 +7,10 @@ VERSION="0.2.0"
 # caller walking a list of URLs can tell "nothing to do here" from "this broke".
 EXIT_SKIPPED=3
 
+# Returned when a checkout holds work the remote does not have, so a caller can
+# leave it alone instead of counting it as broken.
+EXIT_LOCAL_WORK=4
+
 trap 'fail "Unexpected error on line $LINENO ($?)"' ERR
 
 # Check if required commands exist
@@ -18,6 +22,39 @@ fi
 fail() {
   echo "Error: $*" >&2
   exit 1
+}
+
+skip_local_work() {
+  echo "Skipped: $1: $2" >&2
+  exit $EXIT_LOCAL_WORK
+}
+
+# A pull with no argument fails outright once its upstream branch is gone, which
+# is what renaming a default branch upstream leaves behind. Recovering means
+# following the remote's current default, and that is only safe for a checkout
+# holding nothing of its own; one that does is reported and left alone.
+recover_moved_default_branch() {
+  local dest_dir="$1"
+
+  if [ -n "$(git status --porcelain)" ]; then
+    skip_local_work "uncommitted changes" "$dest_dir"
+  fi
+
+  git fetch origin --prune > /dev/null 2>&1 || return 1
+  git remote set-head origin --auto > /dev/null 2>&1 || return 1
+
+  local head_ref=""
+  head_ref=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || return 1
+  local default_branch="${head_ref#origin/}"
+
+  local ahead=""
+  ahead=$(git rev-list --count "origin/$default_branch..HEAD" 2>/dev/null) || return 1
+  if [ "$ahead" != "0" ]; then
+    skip_local_work "commits not on the remote" "$dest_dir"
+  fi
+
+  git switch "$default_branch" > /dev/null 2>&1 || return 1
+  git pull > /dev/null 2>&1
 }
 
 # Extract host, owner and repo from Git hosting URL
@@ -171,8 +208,10 @@ cmd_get() {
     if git rev-parse --git-dir > /dev/null 2>&1; then
       local pull_log
       if ! pull_log=$(git pull 2>&1); then
-        fail "Failed to update repository: $dest_dir
+        if ! recover_moved_default_branch "$dest_dir"; then
+          fail "Failed to update repository: $dest_dir
 $pull_log"
+        fi
       fi
     else
       fail "Directory exists but is not a git repository: $dest_dir"
