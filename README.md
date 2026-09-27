@@ -209,7 +209,7 @@ therefore reaches the same directory as the plain one.
 |------|---------|
 | 0 | The repository was cloned or updated |
 | 1 | Something went wrong. The git output follows the message |
-| 3 | The repository could not be reached at all and was skipped |
+| 3 | The repository could not be reached at all or has no commits yet, and was skipped |
 | 4 | The checkout holds work the remote does not have and was left alone |
 
 Codes 3 and 4 exist for callers walking a list of URLs they do not control, such
