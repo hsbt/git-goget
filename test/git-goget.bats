@@ -379,6 +379,55 @@ EOF
   [ "$(/usr/bin/git -C "$dest" symbolic-ref --short HEAD)" = "master" ]
 }
 
+# Serves a bare repository under a URL that parse_git_url accepts, so the real
+# git clones and pulls it without leaving the machine.
+setup_local_upstream() {
+  local url="$1"
+  local upstream="$TEST_TEMP_DIR/upstream.git"
+
+  /usr/bin/git init -q --bare -b main "$upstream"
+  /usr/bin/git config --global "url.$upstream.insteadOf" "$url"
+
+  cat > "$MOCK_BIN_DIR/git" << 'EOF'
+#!/bin/bash
+exec /usr/bin/git "$@"
+EOF
+  chmod +x "$MOCK_BIN_DIR/git"
+}
+
+@test "skips cloning a repository nobody has pushed to" {
+  setup_local_upstream "https://github.com/example/empty"
+
+  run "$SCRIPT_PATH" "https://github.com/example/empty"
+  [ "$status" -eq 3 ]
+  [ "$output" = "Skipped: repository is empty: https://github.com/example/empty" ]
+  [ ! -d "$HOME/src/github.com/example/empty" ]
+}
+
+@test "skips updating a checkout whose repository nobody has pushed to" {
+  setup_local_upstream "https://github.com/example/empty"
+  dest="$HOME/src/github.com/example/empty"
+  mkdir -p "$(dirname "$dest")"
+  /usr/bin/git clone -q "https://github.com/example/empty" "$dest" 2>/dev/null
+
+  run "$SCRIPT_PATH" "https://github.com/example/empty"
+  [ "$status" -eq 3 ]
+  [ "$output" = "Skipped: repository is empty: https://github.com/example/empty" ]
+  [ -d "$dest/.git" ]
+}
+
+@test "keeps a clone whose remote HEAD names a missing branch" {
+  setup_local_upstream "https://github.com/example/headless"
+  seed="$TEST_TEMP_DIR/seed"
+  /usr/bin/git init -q -b develop "$seed"
+  /usr/bin/git -C "$seed" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m "Initial commit"
+  /usr/bin/git -C "$seed" push -q "$TEST_TEMP_DIR/upstream.git" develop
+
+  run "$SCRIPT_PATH" "https://github.com/example/headless"
+  [ "$status" -eq 0 ]
+  [ -d "$HOME/src/github.com/example/headless/.git" ]
+}
+
 # Records the URL handed to git clone, which a successful clone otherwise keeps
 # to itself now that its output is captured rather than printed.
 record_clone_url() {
@@ -389,6 +438,7 @@ if [[ "$1" == "clone" ]]; then
   mkdir -p "$3"
   cd "$3"
   /usr/bin/git init -q .
+  /usr/bin/git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m "Initial commit"
 else
   /usr/bin/git "$@"
 fi

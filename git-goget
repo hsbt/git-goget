@@ -3,8 +3,9 @@ set -euo pipefail
 
 VERSION="0.3.0"
 
-# Returned instead of an error when a repository cannot be reached at all, so a
-# caller walking a list of URLs can tell "nothing to do here" from "this broke".
+# Returned instead of an error when a repository cannot be reached at all or has
+# nothing in it yet, so a caller walking a list of URLs can tell "nothing to do
+# here" from "this broke".
 EXIT_SKIPPED=3
 
 # Returned when a checkout holds work the remote does not have, so a caller can
@@ -55,6 +56,19 @@ recover_moved_default_branch() {
 
   git switch "$default_branch" > /dev/null 2>&1 || return 1
   git pull > /dev/null 2>&1
+}
+
+# A repository nobody has pushed to yet advertises no refs at all. Cloning it
+# succeeds and pulling it fails, but either way there is nothing to get.
+is_empty_repository() {
+  local refs=""
+  refs=$(git ls-remote "$1" 2>/dev/null) || return 1
+  [ -z "$refs" ]
+}
+
+skip_empty_repository() {
+  echo "Skipped: repository is empty: $1" >&2
+  exit $EXIT_SKIPPED
 }
 
 # Extract host, owner and repo from Git hosting URL
@@ -214,6 +228,9 @@ cmd_get() {
     if git rev-parse --git-dir > /dev/null 2>&1; then
       local pull_log
       if ! pull_log=$(git pull 2>&1); then
+        if is_empty_repository origin; then
+          skip_empty_repository "$git_url"
+        fi
         if ! recover_moved_default_branch "$dest_dir"; then
           fail "Failed to update repository: $dest_dir
 $pull_log"
@@ -234,6 +251,13 @@ $pull_log"
       fi
       fail "Failed to clone repository: $git_url
 $clone_log"
+    fi
+    # ls-remote costs a round trip, so it is asked only when nothing got checked
+    # out, which a remote HEAD naming a missing branch also causes. Dropping the
+    # empty checkout lets a later run clone afresh once something is pushed.
+    if ! git -C "$dest_dir" rev-parse -q --verify HEAD > /dev/null && is_empty_repository "$git_url"; then
+      rm -rf "$dest_dir"
+      skip_empty_repository "$git_url"
     fi
   fi
 }
